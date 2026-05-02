@@ -1,9 +1,3 @@
-# projekty-ai
-
-Moje projekty AI
-
-
-
 \# Projekty AI 🤖
 
 
@@ -20,17 +14,37 @@ Moje projekty związane ze sztuczną inteligencją.
 
 Prosty kalkulator w Pythonie.
 
+\*\*Technologie:\*\* Python
 
 
-\### 💬 Chatbot AI
+
+\### 💬 Chatbot w terminalu
 
 Chatbot używający modelu LLaMA 3.3 przez Groq API.
 
-Obsługuje rozmowę w języku polskim.
-
-
-
 \*\*Technologie:\*\* Python, Groq API, LLaMA 3.3
+
+
+
+\### 🌐 Chatbot webowy
+
+Interaktywny chatbot w przeglądarce z historią rozmowy.
+
+\*\*Technologie:\*\* Python, Streamlit, Groq API, LLaMA 3.3
+
+
+
+\### 📄 Analizator PDF z AI
+
+Wrzuć dokument PDF i zadawaj pytania o jego treść.
+
+\*\*Technologie:\*\* Python, Streamlit, Groq API, PyPDF2
+
+
+
+\## Technologie
+
+Python • Streamlit • Groq API • LLaMA 3.3 • Git
 
 
 
