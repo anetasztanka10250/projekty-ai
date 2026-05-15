@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Edytuj — {{ item.nazwa }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="d-flex align-items-center mb-4">
+            <a href="{{ url_for('katalog') }}" class="btn btn-outline-secondary me-3">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h2 class="fw-bold mb-0" style="color:#4a2d4a;">
+                <i class="fas fa-edit me-2"></i>Edytuj ubranie
+            </h2>
+        </div>
+
+        <div class="row g-4">
+            <!-- Zdjęcie -->
+            <div class="col-md-4 text-center">
+                {% if item.filename %}
+                <img src="{{ url_for('static', filename='uploads/' + item.filename) }}"
+                     class="img-fluid rounded-3 shadow"
+                     style="max-height:380px;width:100%;object-fit:cover;" alt="{{ item.nazwa }}">
+                {% else %}
+                <div class="rounded-3 bg-light d-flex align-items-center justify-content-center"
+                     style="height:280px;">
+                    <i class="fas fa-tshirt fa-5x text-muted"></i>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Formularz -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body p-4">
+                        <form method="POST">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Nazwa</label>
+                                <input type="text" name="nazwa" class="form-control"
+                                       value="{{ item.nazwa }}" required>
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Typ</label>
+                                    <select name="typ" class="form-select">
+                                        {% for t in typy %}
+                                        <option value="{{ t }}" {% if t == item.typ %}selected{% endif %}>{{ t }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Marka</label>
+                                    <input type="text" name="marka" class="form-control" value="{{ item.marka }}">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Kolor</label>
+                                <input type="text" name="kolor" class="form-control" value="{{ item.kolor }}">
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Stan</label>
+                                    <select name="stan" class="form-select">
+                                        {% for s in stany %}
+                                        <option value="{{ s }}" {% if s == item.stan %}selected{% endif %}>{{ s }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Status</label>
+                                    <select name="status" class="form-select">
+                                        {% for s in statusy %}
+                                        <option value="{{ s }}" {% if s == item.status %}selected{% endif %}>{{ s }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="fas fa-link me-1 text-success"></i>Link Vinted
+                                </label>
+                                <input type="url" name="link_vinted" class="form-control"
+                                       value="{{ item.link_vinted }}"
+                                       placeholder="https://www.vinted.pl/items/…">
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="form-label fw-semibold">
+                                    <i class="fas fa-tag me-1 text-warning"></i>Cena sprzedaży
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" name="cena" class="form-control"
+                                           value="{{ item.cena }}" placeholder="0.00"
+                                           step="0.01" min="0">
+                                    <span class="input-group-text">zł</span>
+                                </div>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-2"></i>Zapisz zmiany
+                                </button>
+                                <a href="{{ url_for('katalog') }}" class="btn btn-outline-secondary">
+                                    Anuluj
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

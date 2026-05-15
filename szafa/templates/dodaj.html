@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Dodaj ubrania{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <h2 class="fw-bold mb-4" style="color:#4a2d4a;">
+            <i class="fas fa-cloud-upload-alt me-2"></i>Dodaj ubrania
+        </h2>
+
+        <div class="card p-4">
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
+
+                <div id="dropZone"
+                     style="border:3px dashed #c9a0c0;border-radius:16px;padding:3rem;text-align:center;
+                            background:#fdf0f8;cursor:pointer;transition:all .3s;">
+                    <i class="fas fa-images fa-3x mb-3" style="color:#c9a0c0;"></i>
+                    <p class="fw-semibold text-muted mb-1">Przeciągnij zdjęcia tutaj</p>
+                    <p class="text-muted small mb-3">lub kliknij, aby wybrać pliki</p>
+                    <input type="file" name="zdjecia" id="zdjeciaInput" multiple
+                           accept=".jpg,.jpeg,.png,.gif,.webp" class="d-none">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="document.getElementById('zdjeciaInput').click()">
+                        <i class="fas fa-folder-open me-2"></i>Wybierz zdjęcia
+                    </button>
+                    <p class="text-muted small mt-2 mb-0">JPG, PNG, WEBP, GIF</p>
+                </div>
+
+                <div id="previewWrap" class="mt-3" style="display:none;">
+                    <div id="previewGrid" class="row g-2 mb-2"></div>
+                    <div class="alert alert-info py-2 mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <span id="fileCountText"></span>
+                    </div>
+                </div>
+
+                <div class="alert alert-light border mt-3 mb-3">
+                    <i class="fas fa-robot text-primary me-2"></i>
+                    <strong>Jak to działa?</strong> AI (Claude Opus) przeanalizuje każde zdjęcie
+                    i wypełni nazwę, typ, markę i kolor. Następnie wybierzesz stan każdego ubrania.
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" id="submitBtn" class="btn btn-primary btn-lg" disabled>
+                        <i class="fas fa-magic me-2"></i>Analizuj ze sztuczną inteligencją
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="loadingCard" class="card p-4 text-center mt-3" style="display:none;">
+            <div class="spinner-border text-primary mb-3 mx-auto" style="width:3rem;height:3rem;"></div>
+            <h5 class="mb-1">AI analizuje zdjęcia…</h5>
+            <p class="text-muted small mb-0">Może to potrwać kilka sekund na zdjęcie</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const input = document.getElementById('zdjeciaInput');
+const dropZone = document.getElementById('dropZone');
+const previewWrap = document.getElementById('previewWrap');
+const previewGrid = document.getElementById('previewGrid');
+const fileCountText = document.getElementById('fileCountText');
+const submitBtn = document.getElementById('submitBtn');
+const form = document.getElementById('uploadForm');
+const loadingCard = document.getElementById('loadingCard');
+
+function showPreviews(files) {
+    previewGrid.innerHTML = '';
+    if (!files.length) {
+        previewWrap.style.display = 'none';
+        submitBtn.disabled = true;
+        return;
+    }
+    previewWrap.style.display = '';
+    fileCountText.textContent = `Wybrano ${files.length} zdjęć do analizy przez AI`;
+    submitBtn.disabled = false;
+
+    Array.from(files).forEach(file => {
+        const col = document.createElement('div');
+        col.className = 'col-3 col-md-2';
+        const reader = new FileReader();
+        reader.onload = e => {
+            col.innerHTML = `
+                <img src="${e.target.result}" class="img-fluid rounded"
+                     style="height:70px;width:100%;object-fit:cover;" title="${file.name}">
+                <div class="text-muted small text-truncate mt-1">${file.name}</div>`;
+        };
+        reader.readAsDataURL(file);
+        previewGrid.appendChild(col);
+    });
+}
+
+input.addEventListener('change', () => showPreviews(input.files));
+
+dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.background = '#f0e0f8';
+    dropZone.style.borderColor = '#a070b0';
+});
+dropZone.addEventListener('dragleave', () => {
+    dropZone.style.background = '#fdf0f8';
+    dropZone.style.borderColor = '#c9a0c0';
+});
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.background = '#fdf0f8';
+    dropZone.style.borderColor = '#c9a0c0';
+    const dt = new DataTransfer();
+    Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+    input.files = dt.files;
+    showPreviews(input.files);
+});
+
+form.addEventListener('submit', () => {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analizuję…';
+    loadingCard.style.display = '';
+});
+</script>
+{% endblock %}

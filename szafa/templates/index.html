@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Strona główna{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col">
+        <h1 class="fw-bold mb-1" style="color:#4a2d4a;">
+            <i class="fas fa-tshirt me-2"></i>Audyt Szafy
+        </h1>
+        <p class="text-muted mb-0">Zarządzaj szafą i sprzedawaj na Vinted</p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('dodaj') }}" class="btn btn-primary btn-lg">
+            <i class="fas fa-plus me-2"></i>Dodaj ubrania
+        </a>
+    </div>
+</div>
+
+<!-- Statystyki -->
+<div class="row g-3 mb-5">
+    <div class="col-6 col-md-4 col-lg">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #c9a0c0;border-radius:12px;">
+            <div class="display-6 fw-bold" style="color:#c9a0c0;">{{ stats.total }}</div>
+            <div class="small text-muted">Wszystkich</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #6c757d;border-radius:12px;">
+            <div class="display-6 fw-bold text-secondary">{{ stats.do_wystawienia }}</div>
+            <div class="small text-muted">Do wystawienia</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #20c997;border-radius:12px;">
+            <div class="display-6 fw-bold" style="color:#20c997;">{{ stats.na_vinted }}</div>
+            <div class="small text-muted">Na Vinted</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #198754;border-radius:12px;">
+            <div class="display-6 fw-bold text-success">{{ stats.sprzedane }}</div>
+            <div class="small text-muted">Sprzedanych</div>
+        </div>
+    </div>
+    <div class="col-12 col-md-8 col-lg-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #ffc107;border-radius:12px;background:linear-gradient(135deg,#fffbe6,#fff);">
+            <div class="display-6 fw-bold text-warning">{{ "%.2f"|format(stats.przychod) }} zł</div>
+            <div class="small text-muted">Łączny przychód</div>
+        </div>
+    </div>
+</div>
+
+{% if recent %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="fw-bold mb-0" style="color:#4a2d4a;">Ostatnio dodane</h4>
+    <a href="{{ url_for('katalog') }}" class="btn btn-outline-secondary btn-sm">
+        Wszystkie <i class="fas fa-arrow-right ms-1"></i>
+    </a>
+</div>
+
+<div class="row row-cols-2 row-cols-md-4 g-3">
+    {% for item in recent %}
+    <div class="col">
+        <a href="{{ url_for('edytuj', item_id=item.id) }}" class="text-decoration-none">
+            <div class="card h-100">
+                {% if item.filename %}
+                <img src="{{ url_for('static', filename='uploads/' + item.filename) }}"
+                     class="item-thumb" alt="{{ item.nazwa }}">
+                {% else %}
+                <div class="item-thumb bg-light d-flex align-items-center justify-content-center">
+                    <i class="fas fa-tshirt fa-3x text-muted"></i>
+                </div>
+                {% endif %}
+                <div class="card-body p-2">
+                    <p class="fw-semibold small mb-1 text-dark">
+                        {{ item.nazwa[:42] }}{% if item.nazwa|length > 42 %}…{% endif %}
+                    </p>
+                    <p class="text-muted small mb-1">{{ item.marka }} · {{ item.kolor }}</p>
+                    <span class="badge text-white small
+                        {% if item.status == 'Na Vinted' %}bg-success
+                        {% elif item.status == 'Sprzedane' %}bg-primary
+                        {% else %}bg-secondary{% endif %}">
+                        {{ item.status }}
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="fas fa-tshirt fa-5x mb-4 d-block" style="color:#e8d0e8;"></i>
+    <h4 class="text-muted">Szafa jest pusta!</h4>
+    <p class="text-muted">Dodaj ubrania i pozwól AI je skatalogować.</p>
+    <a href="{{ url_for('dodaj') }}" class="btn btn-primary btn-lg mt-2">
+        <i class="fas fa-plus me-2"></i>Dodaj pierwsze ubrania
+    </a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Statystyki{% endblock %}
+
+{% block content %}
+<h2 class="fw-bold mb-4" style="color:#4a2d4a;">
+    <i class="fas fa-chart-pie me-2"></i>Statystyki szafy
+</h2>
+
+<!-- Karty podsumowania -->
+<div class="row g-3 mb-5">
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #c9a0c0;border-radius:12px;">
+            <div class="h2 fw-bold" style="color:#c9a0c0;">{{ total }}</div>
+            <div class="small text-muted">Wszystkich ubrań</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #20c997;border-radius:12px;">
+            <div class="h2 fw-bold" style="color:#20c997;">{{ status_counts.get('Na Vinted', 0) }}</div>
+            <div class="small text-muted">Na Vinted</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #198754;border-radius:12px;">
+            <div class="h2 fw-bold text-success">{{ sprzedane|length }}</div>
+            <div class="small text-muted">Sprzedanych</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #fd7e14;border-radius:12px;">
+            <div class="h2 fw-bold" style="color:#fd7e14;">{{ "%.2f"|format(wartosc_koszyka) }} zł</div>
+            <div class="small text-muted">Wartość koszyka</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100" style="border-left:4px solid #ffc107;border-radius:12px;background:linear-gradient(135deg,#fffbe6,#fff);">
+            <div class="h2 fw-bold text-warning">{{ "%.2f"|format(przychod_total) }} zł</div>
+            <div class="small text-muted">Łączny przychód</div>
+        </div>
+    </div>
+</div>
+
+<!-- Wykresy -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card p-3 h-100">
+            <h5 class="fw-semibold mb-3">Podział według typu</h5>
+            <canvas id="typChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card p-3 h-100">
+            <h5 class="fw-semibold mb-3">Podział według statusu</h5>
+            <canvas id="statusChart"></canvas>
+        </div>
+    </div>
+</div>
+
+{% if miesiace %}
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card p-3">
+            <h5 class="fw-semibold mb-3">Przychody ze sprzedaży według miesiąca</h5>
+            <canvas id="revenueChart" style="max-height:220px;"></canvas>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Tabela sprzedanych -->
+{% if sprzedane %}
+<div class="card">
+    <div class="card-header fw-semibold">
+        <i class="fas fa-check-circle me-2 text-success"></i>
+        Sprzedane ubrania ({{ sprzedane|length }})
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Ubranie</th>
+                    <th>Typ</th>
+                    <th>Marka</th>
+                    <th>Stan</th>
+                    <th>Cena</th>
+                    <th>Link</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sprzedane %}
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            {% if item.filename %}
+                            <img src="{{ url_for('static', filename='uploads/' + item.filename) }}"
+                                 class="item-thumb-sm" alt="">
+                            {% endif %}
+                            <span>{{ item.nazwa[:38] }}{% if item.nazwa|length > 38 %}…{% endif %}</span>
+                        </div>
+                    </td>
+                    <td class="small">{{ item.typ }}</td>
+                    <td class="small">{{ item.marka }}</td>
+                    <td><span class="badge bg-light text-dark border">{{ item.stan }}</span></td>
+                    <td class="fw-semibold text-success">{{ item.cena }} zł</td>
+                    <td>
+                        {% if item.link_vinted %}
+                        <a href="{{ item.link_vinted }}" target="_blank" rel="noopener"
+                           class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td colspan="4">ŁĄCZNIE</td>
+                    <td class="text-success">{{ "%.2f"|format(przychod_total) }} zł</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if total == 0 %}
+<div class="text-center py-5">
+    <i class="fas fa-chart-bar fa-5x mb-4 d-block" style="color:#e0c0e0;"></i>
+    <h5 class="text-muted">Brak danych do wyświetlenia</h5>
+    <a href="{{ url_for('dodaj') }}" class="btn btn-primary mt-2">Dodaj ubrania</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const palette = ['#c9a0c0','#f2c9cf','#a0c9a0','#a0b8c9','#c9c0a0',
+                 '#e0a0c9','#a0c9c9','#c9a0a0','#b0a0c9','#c0c9a0'];
+
+// Wykres typów
+const typData = {{ typ_counts | tojson }};
+const typLabels = Object.keys(typData).filter(k => typData[k] > 0);
+const typValues = typLabels.map(k => typData[k]);
+
+if (typLabels.length > 0) {
+    new Chart(document.getElementById('typChart'), {
+        type: 'doughnut',
+        data: {
+            labels: typLabels,
+            datasets: [{
+                data: typValues,
+                backgroundColor: palette.slice(0, typLabels.length),
+                borderWidth: 3,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            plugins: { legend: { position: 'right', labels: { boxWidth: 14 } } },
+            cutout: '55%'
+        }
+    });
+}
+
+// Wykres statusów
+const statusData = {{ status_counts | tojson }};
+new Chart(document.getElementById('statusChart'), {
+    type: 'bar',
+    data: {
+        labels: Object.keys(statusData),
+        datasets: [{
+            label: 'Liczba',
+            data: Object.values(statusData),
+            backgroundColor: ['#6c757d','#20c997','#198754'],
+            borderRadius: 10,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+});
+
+{% if miesiace %}
+// Wykres przychodów
+const revLabels = [{% for m, v in miesiace %}"{{ m }}"{% if not loop.last %},{% endif %}{% endfor %}];
+const revData   = [{% for m, v in miesiace %}{{ v | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+new Chart(document.getElementById('revenueChart'), {
+    type: 'bar',
+    data: {
+        labels: revLabels,
+        datasets: [{
+            label: 'Przychód (zł)',
+            data: revData,
+            backgroundColor: '#c9a0c0',
+            borderRadius: 10,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}
