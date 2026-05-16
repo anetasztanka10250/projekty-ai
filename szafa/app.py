@@ -11,6 +11,8 @@ import csv
 import io
 import uuid
 from datetime import datetime
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 from werkzeug.utils import secure_filename
 
@@ -22,7 +24,6 @@ app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-DATA_FILE = os.path.join(BASE_DIR, 'data', 'wardrobe.json')
 TEMP_DIR = os.path.join(BASE_DIR, 'data', 'temp')
 
 TYPY = ['Sukienka', 'Bluzka', 'Spodnie', 'Sweter', 'Kurtka', 'Płaszcz', 'Spódnica', 'Dżinsy', 'T-shirt', 'Buty/Obuwie', 'Torebka/Akcesoria', 'Inne']
@@ -30,24 +31,33 @@ STANY = ['Nowe z metką', 'Bardzo dobry', 'Dobry', 'Używane']
 STATUSY = ['Do wystawienia', 'Na Vinted', 'Sprzedane']
 
 
+def get_db_conn():
+    return psycopg2.connect(os.environ['DATABASE_URL'])
+
+
+def init_db():
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ubrania (
+                    id          TEXT PRIMARY KEY,
+                    filename    TEXT NOT NULL,
+                    nazwa       TEXT NOT NULL DEFAULT '',
+                    typ         TEXT NOT NULL DEFAULT 'Inne',
+                    marka       TEXT NOT NULL DEFAULT 'Nieznana',
+                    kolor       TEXT NOT NULL DEFAULT '',
+                    stan        TEXT NOT NULL DEFAULT 'Dobry',
+                    status      TEXT NOT NULL DEFAULT 'Do wystawienia',
+                    link_vinted TEXT NOT NULL DEFAULT '',
+                    cena        TEXT NOT NULL DEFAULT '',
+                    data_dodania TEXT NOT NULL DEFAULT ''
+                )
+            """)
+        conn.commit()
+
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return []
-    with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        try:
-            return json.load(f)
-        except Exception:
-            return []
-
-
-def save_data(data):
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def save_temp(upload_id, items):
@@ -122,16 +132,20 @@ def analyze_image(image_path, filename):
 
 @app.route('/')
 def index():
-    items = load_data()
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM ubrania ORDER BY data_dodania DESC")
+            items = cur.fetchall()
+
     stats = {
         'total': len(items),
-        'do_wystawienia': sum(1 for i in items if i.get('status') == 'Do wystawienia'),
-        'na_vinted': sum(1 for i in items if i.get('status') == 'Na Vinted'),
-        'sprzedane': sum(1 for i in items if i.get('status') == 'Sprzedane'),
-        'przychod': sum(float(i.get('cena') or 0) for i in items if i.get('status') == 'Sprzedane'),
-        'wartosc_koszyka': sum(float(i.get('cena') or 0) for i in items if i.get('status') in ('Do wystawienia', 'Na Vinted'))
+        'do_wystawienia': sum(1 for i in items if i['status'] == 'Do wystawienia'),
+        'na_vinted': sum(1 for i in items if i['status'] == 'Na Vinted'),
+        'sprzedane': sum(1 for i in items if i['status'] == 'Sprzedane'),
+        'przychod': sum(float(i['cena'] or 0) for i in items if i['status'] == 'Sprzedane'),
+        'wartosc_koszyka': sum(float(i['cena'] or 0) for i in items if i['status'] in ('Do wystawienia', 'Na Vinted'))
     }
-    recent = sorted(items, key=lambda x: x.get('data_dodania', ''), reverse=True)[:8]
+    recent = list(items)[:8]
     return render_template('index.html', stats=stats, recent=recent)
 
 
@@ -165,7 +179,7 @@ def dodaj():
                 'kolor': ai.get('kolor', ''),
                 'ai_ok': not ai.get('blad', False)
             })
-        except Exception as e:
+        except Exception:
             analyzed.append({
                 'filename': unique,
                 'original': orig,
@@ -202,7 +216,6 @@ def przejrzyj():
 @app.route('/zapisz', methods=['POST'])
 def zapisz():
     upload_id = request.form.get('upload_id') or session.get('upload_id')
-    data = load_data()
 
     filenames = request.form.getlist('filename')
     nazwy = request.form.getlist('nazwa')
@@ -212,25 +225,32 @@ def zapisz():
     stany = request.form.getlist('stan')
 
     saved = 0
-    for i, fn in enumerate(filenames):
-        if not fn:
-            continue
-        data.append({
-            'id': str(uuid.uuid4()),
-            'filename': fn,
-            'nazwa': nazwy[i] if i < len(nazwy) else '',
-            'typ': typy_f[i] if i < len(typy_f) else 'Inne',
-            'marka': marki[i] if i < len(marki) else 'Nieznana',
-            'kolor': kolory[i] if i < len(kolory) else '',
-            'stan': stany[i] if i < len(stany) else 'Dobry',
-            'status': 'Do wystawienia',
-            'link_vinted': '',
-            'cena': '',
-            'data_dodania': datetime.now().isoformat()
-        })
-        saved += 1
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            for i, fn in enumerate(filenames):
+                if not fn:
+                    continue
+                cur.execute(
+                    """INSERT INTO ubrania
+                       (id, filename, nazwa, typ, marka, kolor, stan, status, link_vinted, cena, data_dodania)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        str(uuid.uuid4()),
+                        fn,
+                        nazwy[i] if i < len(nazwy) else '',
+                        typy_f[i] if i < len(typy_f) else 'Inne',
+                        marki[i] if i < len(marki) else 'Nieznana',
+                        kolory[i] if i < len(kolory) else '',
+                        stany[i] if i < len(stany) else 'Dobry',
+                        'Do wystawienia',
+                        '',
+                        '',
+                        datetime.now().isoformat()
+                    )
+                )
+                saved += 1
+        conn.commit()
 
-    save_data(data)
     if upload_id:
         delete_temp(upload_id)
         session.pop('upload_id', None)
@@ -241,22 +261,34 @@ def zapisz():
 
 @app.route('/katalog')
 def katalog():
-    items = load_data()
     filtr_typ = request.args.get('typ', '')
     filtr_status = request.args.get('status', '')
     filtr_stan = request.args.get('stan', '')
     szukaj = request.args.get('szukaj', '')
 
+    query = "SELECT * FROM ubrania WHERE 1=1"
+    params = []
+
     if filtr_typ:
-        items = [i for i in items if i.get('typ') == filtr_typ]
+        query += " AND typ = %s"
+        params.append(filtr_typ)
     if filtr_status:
-        items = [i for i in items if i.get('status') == filtr_status]
+        query += " AND status = %s"
+        params.append(filtr_status)
     if filtr_stan:
-        items = [i for i in items if i.get('stan') == filtr_stan]
+        query += " AND stan = %s"
+        params.append(filtr_stan)
     if szukaj:
-        q = szukaj.lower()
-        items = [i for i in items if q in i.get('nazwa', '').lower()
-                 or q in i.get('marka', '').lower() or q in i.get('kolor', '').lower()]
+        query += " AND (LOWER(nazwa) LIKE %s OR LOWER(marka) LIKE %s OR LOWER(kolor) LIKE %s)"
+        q = f"%{szukaj.lower()}%"
+        params.extend([q, q, q])
+
+    query += " ORDER BY data_dodania DESC"
+
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            items = cur.fetchall()
 
     return render_template('katalog.html', items=items, typy=TYPY, stany=STANY, statusy=STATUSY,
                            filtr_typ=filtr_typ, filtr_status=filtr_status, filtr_stan=filtr_stan,
@@ -265,23 +297,37 @@ def katalog():
 
 @app.route('/edytuj/<item_id>', methods=['GET', 'POST'])
 def edytuj(item_id):
-    data = load_data()
-    item = next((i for i in data if i['id'] == item_id), None)
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM ubrania WHERE id = %s", (item_id,))
+            item = cur.fetchone()
+
     if not item:
         flash('Nie znaleziono ubrania.', 'danger')
         return redirect(url_for('katalog'))
 
     if request.method == 'POST':
-        item['nazwa'] = request.form.get('nazwa', item['nazwa'])
-        item['typ'] = request.form.get('typ', item['typ'])
-        item['marka'] = request.form.get('marka', item['marka'])
-        item['kolor'] = request.form.get('kolor', item['kolor'])
-        item['stan'] = request.form.get('stan', item['stan'])
-        item['status'] = request.form.get('status', item['status'])
-        item['link_vinted'] = request.form.get('link_vinted', '').strip()
         cena = request.form.get('cena', '').strip().replace(',', '.')
-        item['cena'] = cena if cena else ''
-        save_data(data)
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE ubrania SET
+                       nazwa=%s, typ=%s, marka=%s, kolor=%s, stan=%s,
+                       status=%s, link_vinted=%s, cena=%s
+                       WHERE id=%s""",
+                    (
+                        request.form.get('nazwa', item['nazwa']),
+                        request.form.get('typ', item['typ']),
+                        request.form.get('marka', item['marka']),
+                        request.form.get('kolor', item['kolor']),
+                        request.form.get('stan', item['stan']),
+                        request.form.get('status', item['status']),
+                        request.form.get('link_vinted', '').strip(),
+                        cena if cena else '',
+                        item_id
+                    )
+                )
+            conn.commit()
         flash('Zaktualizowano ubranie.', 'success')
         return redirect(url_for('katalog'))
 
@@ -290,35 +336,42 @@ def edytuj(item_id):
 
 @app.route('/usun/<item_id>', methods=['POST'])
 def usun(item_id):
-    data = load_data()
-    item = next((i for i in data if i['id'] == item_id), None)
-    if item:
-        fp = os.path.join(app.config['UPLOAD_FOLDER'], item.get('filename', ''))
-        if os.path.exists(fp):
-            os.remove(fp)
-        data = [i for i in data if i['id'] != item_id]
-        save_data(data)
-        flash('Ubranie usunięte.', 'success')
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT filename FROM ubrania WHERE id = %s", (item_id,))
+            item = cur.fetchone()
+        if item:
+            fp = os.path.join(app.config['UPLOAD_FOLDER'], item['filename'])
+            if os.path.exists(fp):
+                os.remove(fp)
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM ubrania WHERE id = %s", (item_id,))
+            conn.commit()
+            flash('Ubranie usunięte.', 'success')
     return redirect(url_for('katalog'))
 
 
 @app.route('/statystyki')
 def statystyki():
-    items = load_data()
-    typ_counts = {t: sum(1 for i in items if i.get('typ') == t) for t in TYPY}
-    status_counts = {s: sum(1 for i in items if i.get('status') == s) for s in STATUSY}
-    stan_counts = {s: sum(1 for i in items if i.get('stan') == s) for s in STANY}
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM ubrania")
+            items = cur.fetchall()
 
-    sprzedane = [i for i in items if i.get('status') == 'Sprzedane']
-    przychod_total = sum(float(i.get('cena') or 0) for i in sprzedane)
-    wartosc_koszyka = sum(float(i.get('cena') or 0) for i in items if i.get('status') in ('Do wystawienia', 'Na Vinted'))
+    typ_counts = {t: sum(1 for i in items if i['typ'] == t) for t in TYPY}
+    status_counts = {s: sum(1 for i in items if i['status'] == s) for s in STATUSY}
+    stan_counts = {s: sum(1 for i in items if i['stan'] == s) for s in STANY}
+
+    sprzedane = [i for i in items if i['status'] == 'Sprzedane']
+    przychod_total = sum(float(i['cena'] or 0) for i in sprzedane)
+    wartosc_koszyka = sum(float(i['cena'] or 0) for i in items if i['status'] in ('Do wystawienia', 'Na Vinted'))
 
     miesiace = {}
     for i in sprzedane:
-        if i.get('cena'):
-            m = i.get('data_dodania', '')[:7]
+        if i['cena']:
+            m = i['data_dodania'][:7]
             if m:
-                miesiace[m] = miesiace.get(m, 0) + float(i.get('cena') or 0)
+                miesiace[m] = miesiace.get(m, 0) + float(i['cena'] or 0)
 
     return render_template('statystyki.html',
                            total=len(items),
@@ -333,12 +386,16 @@ def statystyki():
 
 @app.route('/eksport')
 def eksport():
-    data = load_data()
+    with get_db_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM ubrania ORDER BY data_dodania DESC")
+            items = cur.fetchall()
+
     output = io.StringIO()
     fields = ['id', 'nazwa', 'typ', 'marka', 'kolor', 'stan', 'status', 'link_vinted', 'cena', 'data_dodania']
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
-    for item in data:
+    for item in items:
         writer.writerow({k: item.get(k, '') for k in fields})
     output.seek(0)
     return Response(
@@ -350,5 +407,6 @@ def eksport():
 
 if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIR, 'data'), exist_ok=True)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    init_db()
     app.run(debug=True, host='0.0.0.0', port=5000)
