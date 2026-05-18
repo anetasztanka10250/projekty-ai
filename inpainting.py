@@ -2,6 +2,22 @@ import streamlit as st
 import requests
 from PIL import Image, ImageEnhance, ImageFilter
 import io
+import cv2
+import numpy as np
+import os
+import base64
+import re
+
+def _wczytaj_token_hf():
+    try:
+        tekst = open("klucz.txt", encoding="utf-8").read()
+        m = re.search(r'(hf_\S+)', tekst)
+        return m.group(1) if m else None
+    except FileNotFoundError:
+        return None
+
+HF_TOKEN = _wczytaj_token_hf()
+HF_INPAINT_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting"
 
 st.set_page_config(page_title="🎨 AI Kompozycja Tortów", page_icon="🎨", layout="wide")
 
@@ -102,6 +118,38 @@ def dodaj_cien(tort_rgba, intensywnosc=0.4, rozmycie=20, offset=15):
     wynik.paste(tort_rgba, (0, 0), mask=tort_rgba.split()[3])
     return wynik
 
+def inpaint_hf(obraz_pil, maska_np):
+    w_orig, h_orig = obraz_pil.size
+    skala = min(512 / w_orig, 512 / h_orig, 1.0)
+    nowy_w = max(8, (round(w_orig * skala) // 8) * 8)
+    nowy_h = max(8, (round(h_orig * skala) // 8) * 8)
+    img_512 = obraz_pil.resize((nowy_w, nowy_h), Image.LANCZOS)
+    maska_512 = Image.fromarray(maska_np).resize((nowy_w, nowy_h), Image.NEAREST)
+
+    def pil_b64(img):
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+
+    resp = requests.post(
+        HF_INPAINT_URL,
+        headers={"Authorization": f"Bearer {HF_TOKEN}"},
+        json={
+            "inputs": "background, seamless texture, clean surface, no objects",
+            "parameters": {
+                "image": pil_b64(img_512),
+                "mask_image": pil_b64(maska_512),
+                "num_inference_steps": 20,
+                "guidance_scale": 7.5,
+            }
+        },
+        timeout=120
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HF API {resp.status_code}: {resp.text[:300]}")
+    wynik = Image.open(io.BytesIO(resp.content)).convert("RGB")
+    return np.array(wynik.resize((w_orig, h_orig), Image.LANCZOS))
+
 def sklej_kompozycje(tlo_img, tort_rgba, skala, pozycja_x, pozycja_y, cien_int, cien_roz):
     rozmiar = 1080
     tlo_kwadrat = przytnij_do_kwadratu(tlo_img, rozmiar).convert("RGBA")
@@ -116,6 +164,69 @@ def sklej_kompozycje(tlo_img, tort_rgba, skala, pozycja_x, pozycja_y, cien_int, 
     y = int((rozmiar - nowy_h) * pozycja_y)
     wynik.paste(tort_skalowany, (x, y), mask=tort_skalowany.split()[3])
     return wynik.convert("RGB")
+
+# KROK 0 — OCZYSZCZANIE WŁASNEGO TŁA
+st.markdown("## 🧹 Krok 0 — Oczyść własne tło *(opcjonalne)*")
+st.markdown('<div class="info">📷 Masz zdjęcie tła z niechcianym obiektem? Zaznacz go suwakami i usuń przez <strong>Stable Diffusion Inpainting</strong> (HuggingFace) — czyste tło zapisze się jako <strong>tla/wlasne.jpg</strong>.</div>', unsafe_allow_html=True)
+
+if "tlo_wyczyszczone" not in st.session_state:
+    st.session_state.tlo_wyczyszczone = None
+
+tlo_do_czyszczenia = st.file_uploader(
+    "Wrzuć zdjęcie tła do oczyszczenia:",
+    type=["jpg", "jpeg", "png"],
+    key="tlo_czyszczenie"
+)
+
+if tlo_do_czyszczenia:
+    tlo_obraz = Image.open(tlo_do_czyszczenia).convert("RGB")
+    tlo_np = np.array(tlo_obraz)
+    h_img, w_img = tlo_np.shape[:2]
+
+    st.markdown("**Zaznacz obszar do usunięcia:**")
+    col_suw1, col_suw2 = st.columns(2)
+    with col_suw1:
+        x_inp = st.slider("↔️ Pozycja X (px)", 0, w_img - 1, w_img // 4, key="inp_x")
+        szer_max = max(1, w_img - x_inp)
+        szer_inp = st.slider("📏 Szerokość (px)", 1, szer_max, min(max(1, w_img // 4), szer_max), key="inp_w")
+    with col_suw2:
+        y_inp = st.slider("↕️ Pozycja Y (px)", 0, h_img - 1, h_img // 4, key="inp_y")
+        wys_max = max(1, h_img - y_inp)
+        wys_inp = st.slider("📐 Wysokość (px)", 1, wys_max, min(max(1, h_img // 4), wys_max), key="inp_h")
+
+    podglad_np = tlo_np.copy()
+    cv2.rectangle(
+        podglad_np,
+        (x_inp, y_inp),
+        (min(x_inp + szer_inp, w_img - 1), min(y_inp + wys_inp, h_img - 1)),
+        (255, 0, 0), 3
+    )
+    st.image(podglad_np, caption="Podgląd — czerwona ramka = obszar do usunięcia", use_container_width=True)
+
+    if st.button("🤖 Usuń obiekt przez SD Inpainting i zapisz czyste tło", use_container_width=True, type="primary", key="btn_inpaint"):
+        if not HF_TOKEN:
+            st.error("Nie znaleziono tokenu HuggingFace w klucz.txt!")
+        else:
+            with st.spinner("Wysyłam do Stable Diffusion Inpainting (HuggingFace)... może potrwać ~30 s"):
+                try:
+                    maska = np.zeros((h_img, w_img), dtype=np.uint8)
+                    maska[y_inp:min(y_inp + wys_inp, h_img), x_inp:min(x_inp + szer_inp, w_img)] = 255
+                    wynik_rgb = inpaint_hf(tlo_obraz, maska)
+                    os.makedirs("tla", exist_ok=True)
+                    Image.fromarray(wynik_rgb).save("tla/wlasne.jpg", quality=95)
+                    st.session_state.tlo_wyczyszczone = wynik_rgb
+                except RuntimeError as e:
+                    st.error(str(e))
+
+    if st.session_state.tlo_wyczyszczone is not None:
+        col_przed, col_po = st.columns(2)
+        with col_przed:
+            st.image(tlo_obraz, caption="Oryginał", use_container_width=True)
+        with col_po:
+            st.image(st.session_state.tlo_wyczyszczone, caption="✅ Po usunięciu obiektu", use_container_width=True)
+        st.success("✅ Czyste tło zapisane jako tla/wlasne.jpg")
+
+st.markdown("---")
 
 # KROK 1 — WYBÓR TŁA
 st.markdown("## 🖼️ Krok 1 — Wybierz tło")
@@ -204,5 +315,4 @@ if tort_file and st.session_state.wybrany_url_tla:
 
 elif tort_file and not st.session_state.wybrany_url_tla:
     st.warning("⬆️ Najpierw wybierz tło w Kroku 1!")
-    py -m pip install requests
   
